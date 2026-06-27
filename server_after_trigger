@@ -1,0 +1,60 @@
+// npm install express pg
+const express = require('express');
+const { Pool } = require('pg');
+
+const app = express();
+app.use(express.json());
+
+const pool = new Pool({
+    host: 'localhost',
+    user: 'postgres',
+    password: 'postgres', // Remember to change this!
+    database: 'railway_db',
+    port: 5432,
+    max: 10
+});
+
+// ==========================================
+// ROUTE 1: BOOK A TICKET
+// ==========================================
+app.post('/api/book-ticket', async (req, res) => {
+    const { userId, trainId } = req.body;
+    
+    try {
+        // ONE single call. The Stored Procedure does everything!
+        await pool.query('CALL book_ticket_procedure($1, $2)', [userId, trainId]);
+        
+        console.log(`[API] User ${userId} successfully booked a seat!`);
+        res.status(200).json({ success: true, message: 'Ticket booked successfully!' });
+        
+    } catch (error) {
+        // If the procedure throws the "Sold out!" exception, it lands right here.
+        console.error('[API] Server Error:', error.message);
+        res.status(400).json({ success: false, message: error.message });
+    }
+});
+
+// ==========================================
+// ROUTE 2: CANCEL A TICKET
+// ==========================================
+app.delete('/api/cancel-ticket/:bookingId', async (req, res) => {
+    const { bookingId } = req.params;
+    
+    try {
+        // --- THE TRIGGER MAGIC ---
+        // Notice there is NO "UPDATE seats SET is_booked = false" query here!
+        // We just delete the booking, and the PostgreSQL Trigger automatically frees up the seat.
+        await pool.query('DELETE FROM bookings WHERE id = $1', [bookingId]);
+        
+        console.log(`[API] Booking ${bookingId} cancelled.`);
+        res.status(200).json({ success: true, message: `Booking cancelled. Seat is available again!` });
+    } catch (error) {
+        console.error('[API] Server Error:', error.message);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+});
+
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`🚂 Railway API Server running on http://localhost:${PORT}`);
+});
